@@ -34,6 +34,7 @@ namespace Patcher
             Console.WriteLine("  --deobfuscate              Automatically deobfuscate the binary with de4dot");
             Console.WriteLine("  --fix-netlib               Fix issues with netlib data encoding");
             Console.WriteLine("  --mscorlib-path            Specify your path to mscorlib.dll");
+            Console.WriteLine("  --remove-signature-check   Remove osu!.exe signature check");
             Console.WriteLine("  --remove-certificate-check Remove certificate pinning checks");
             Console.WriteLine("  --help                     Show this help message and exit");
             Environment.Exit(0);
