@@ -481,7 +481,7 @@ namespace Patcher
                     "/usr/lib/mono/4.6/",
                     "/usr/lib/mono/4.5.2/",
                     "/usr/lib/mono/4.5.1/",
-                    "/usr/lib/mono/4.5/", #=zDSqYo2WV2n3gGImYeHrzDoc=::#=zIAq1Tpg=
+                    "/usr/lib/mono/4.5/",
                     "/usr/lib/mono/4.0/",
                     "/usr/lib/mono/3.5/",
                     "/usr/lib/mono/3.0/",
