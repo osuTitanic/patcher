@@ -17,6 +17,7 @@ namespace Patcher
         public bool Deobfuscate { get; set; }
         public bool FixNetLib { get; set; }
         public bool RemoveSignatureCheck { get; set; }
+        public bool RemoveCertificateCheck { get; set; }
     }
 
     static class Program
@@ -25,15 +26,16 @@ namespace Patcher
         {
             Console.WriteLine("Usage: osu-patcher [options]");
             Console.WriteLine("Options:");
-            Console.WriteLine("  --output <file>          Set output assembly name (default: osu!patched.exe)");
-            Console.WriteLine("  --dir <directory>        Set the directory path (default: ./)");
-            Console.WriteLine("  --input-domain <domain>  Set input domain to replace (default: ppy.sh)");
-            Console.WriteLine("  --output-domain <domain> Set output domain to replace with (default: titanic.sh)");
-            Console.WriteLine("  --bancho-ip <ip>         Set Bancho IP (default: 176.57.150.202)");
-            Console.WriteLine("  --deobfuscate            Automatically deobfuscate the binary with de4dot");
-            Console.WriteLine("  --fix-netlib             Fix issues with netlib data encoding");
-            Console.WriteLine("  --mscorlib-path          Specify your path to mscorlib.dll");
-            Console.WriteLine("  --help                   Show this help message and exit");
+            Console.WriteLine("  --output <file>            Set output assembly name (default: osu!patched.exe)");
+            Console.WriteLine("  --dir <directory>          Set the directory path (default: ./)");
+            Console.WriteLine("  --input-domain <domain>    Set input domain to replace (default: ppy.sh)");
+            Console.WriteLine("  --output-domain <domain>   Set output domain to replace with (default: titanic.sh)");
+            Console.WriteLine("  --bancho-ip <ip>           Set Bancho IP (default: 176.57.150.202)");
+            Console.WriteLine("  --deobfuscate              Automatically deobfuscate the binary with de4dot");
+            Console.WriteLine("  --fix-netlib               Fix issues with netlib data encoding");
+            Console.WriteLine("  --mscorlib-path            Specify your path to mscorlib.dll");
+            Console.WriteLine("  --remove-certificate-check Remove certificate pinning checks");
+            Console.WriteLine("  --help                     Show this help message and exit");
             Environment.Exit(0);
         }
 
@@ -74,6 +76,8 @@ namespace Patcher
                         break;
                     case "--remove-signature-check":
                         config.RemoveSignatureCheck = true;
+                    case "--remove-certificate-check":
+                        config.RemoveCertificateCheck = true;
                         break;
                     default:
                         Console.WriteLine("Unknown argument: " + args[i]);
@@ -329,6 +333,63 @@ namespace Patcher
             }
         }
 
+        static void RemoveCertificatePinning(AssemblyDefinition assembly)
+        {
+            // First we have to find the pWebRequest class
+            // This can be done by searching for the "{0}:443" string
+            var webRequestClass = assembly.MainModule.Types
+                .FirstOrDefault(
+                    t => t.Methods.Any(m => m.HasBody && m.Body.Instructions.Any(
+                        i => i.OpCode == OpCodes.Ldstr && i.Operand is string str && str.Contains("{0}:443")
+                    )
+                ));
+
+            if (webRequestClass == null)
+            {
+                Console.WriteLine("No web request class found, skipping certificate pinning removal.");
+                return;
+            }
+
+            Console.WriteLine("Found web request class: " + webRequestClass.FullName);
+
+            // Find the method that checks the certificate
+            // This one is virtualized, so it should always have a similar structure
+            var checkCertificateMethod = webRequestClass.Methods
+                .FirstOrDefault(
+                    m => m.HasBody && m.Body.Instructions.Count >= 13 &&
+                    m.Body.Instructions[0].OpCode == OpCodes.Ldc_I4_1 &&
+                    m.Body.Instructions[1].OpCode == OpCodes.Newarr &&
+                    m.Body.Instructions[2].OpCode == OpCodes.Stloc_0 &&
+                    m.Body.Instructions[3].OpCode == OpCodes.Ldloc_0 &&
+                    m.Body.Instructions[4].OpCode == OpCodes.Ldc_I4_0 &&
+                    m.Body.Instructions[5].OpCode == OpCodes.Ldarg_0 &&
+                    m.Body.Instructions[6].OpCode == OpCodes.Stelem_Ref &&
+                    m.Body.Instructions[7].OpCode == OpCodes.Call &&
+                    m.Body.Instructions[8].OpCode == OpCodes.Call &&
+                    m.Body.Instructions[9].OpCode == OpCodes.Ldstr &&
+                    m.Body.Instructions[10].OpCode == OpCodes.Ldloc_0 &&
+                    m.Body.Instructions[11].OpCode == OpCodes.Call
+                );
+
+            if (checkCertificateMethod == null)
+            {
+                Console.WriteLine("No certificate check method found, skipping certificate pinning removal.");
+                return;
+            }
+
+            // Add a return instruction at the start of the method
+            var il = checkCertificateMethod.Body.GetILProcessor();
+            var returnInstruction = Instruction.Create(OpCodes.Ret);
+            il.InsertBefore(checkCertificateMethod.Body.Instructions[0], returnInstruction);
+
+            // Remove the original instructions
+            checkCertificateMethod.Body.Instructions.Clear();
+            checkCertificateMethod.Body.Instructions.Add(returnInstruction);
+            checkCertificateMethod.Body.InitLocals = false;
+
+            Console.WriteLine("Certificate pinning removed from method: " + checkCertificateMethod.FullName);
+        }
+
         static string DeobfuscateOsuExecutable(string executablePath)
         {
             Console.WriteLine("Deobfuscating...");
@@ -418,7 +479,7 @@ namespace Patcher
                     "/usr/lib/mono/4.6/",
                     "/usr/lib/mono/4.5.2/",
                     "/usr/lib/mono/4.5.1/",
-                    "/usr/lib/mono/4.5/",
+                    "/usr/lib/mono/4.5/", #=zDSqYo2WV2n3gGImYeHrzDoc=::#=zIAq1Tpg=
                     "/usr/lib/mono/4.0/",
                     "/usr/lib/mono/3.5/",
                     "/usr/lib/mono/3.0/",
@@ -477,6 +538,12 @@ namespace Patcher
             {
                 // We have a tcp client -> try to patch bancho ip
                 PatchBanchoIp(assembly, config.BanchoIp);
+            }
+            
+            if (config.RemoveCertificateCheck)
+            {
+                // Try to patch out certificate pinning
+                RemoveCertificatePinning(assembly);
             }
             
             if (config.FixNetLib)
