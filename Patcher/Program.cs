@@ -76,6 +76,7 @@ namespace Patcher
                         break;
                     case "--remove-signature-check":
                         config.RemoveSignatureCheck = true;
+                        break;
                     case "--remove-certificate-check":
                         config.RemoveCertificateCheck = true;
                         break;
