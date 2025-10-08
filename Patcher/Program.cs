@@ -16,6 +16,7 @@ namespace Patcher
         public string? MscorlibPath { get; set; }
         public bool Deobfuscate { get; set; }
         public bool FixNetLib { get; set; }
+        public bool RemoveSignatureCheck { get; set; }
         public bool RemoveCertificateCheck { get; set; }
     }
 
@@ -33,6 +34,7 @@ namespace Patcher
             Console.WriteLine("  --deobfuscate              Automatically deobfuscate the binary with de4dot");
             Console.WriteLine("  --fix-netlib               Fix issues with netlib data encoding");
             Console.WriteLine("  --mscorlib-path            Specify your path to mscorlib.dll");
+            Console.WriteLine("  --remove-signature-check   Remove osu!.exe signature check");
             Console.WriteLine("  --remove-certificate-check Remove certificate pinning checks");
             Console.WriteLine("  --help                     Show this help message and exit");
             Environment.Exit(0);
@@ -72,6 +74,9 @@ namespace Patcher
                         break;
                     case "--fix-netlib":
                         config.FixNetLib = true;
+                        break;
+                    case "--remove-signature-check":
+                        config.RemoveSignatureCheck = true;
                         break;
                     case "--remove-certificate-check":
                         config.RemoveCertificateCheck = true;
@@ -303,6 +308,31 @@ namespace Patcher
             }
             
             Console.WriteLine("Failed to patch netlib encoding.");
+        }
+        
+        static void RemoveSignatureCheck(AssemblyDefinition assembly)
+        {
+            Console.WriteLine("Removing signature check...");
+            
+            // Find method returning a bool with 1 argument that is a string in class that has at least 2 methods and a single PInvoke call with entry point of WinVerifyTrust
+            var potentialSigCheckMethods = assembly.MainModule.Types
+                .Where(t => t.Methods.Count >= 2)
+                .Where(t => t.Methods.Count(m =>
+                    m.IsPInvokeImpl && m.PInvokeInfo != null &&
+                    m.PInvokeInfo.EntryPoint == "WinVerifyTrust") == 1)
+                .SelectMany(t => t.Methods)
+                .Where(m => m.HasBody && m.Parameters.Count == 1 &&
+                            m.Parameters[0].ParameterType.FullName == "System.String" &&
+                            m.ReturnType.FullName == "System.Boolean");
+            
+            foreach (var method in potentialSigCheckMethods)
+            {
+                var il = method.Body.GetILProcessor();
+                il.Body.Instructions.Insert(0, Instruction.Create(OpCodes.Ldc_I4_1)); // push true
+                il.Body.Instructions.Insert(1, Instruction.Create(OpCodes.Ret)); // return
+                
+                Console.WriteLine($"Replaced signature check body with return true in {method.FullName}");
+            }
         }
 
         static void RemoveCertificatePinning(AssemblyDefinition assembly)
@@ -538,6 +568,12 @@ namespace Patcher
                     // osu!common was merged into main osu!.exe
                     FixNetLibEncoding(assembly, resolver);
                 }
+            }
+
+            if (config.RemoveSignatureCheck)
+            {
+                // Remove signature check in newer clients
+                RemoveSignatureCheck(assembly);
             }
             
             Console.WriteLine("Writing new assembly...");
