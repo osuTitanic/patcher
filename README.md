@@ -2,6 +2,10 @@
 
 A server url patcher for osu! clients, made for use in Titanic. It includes automatic replacement of all urls, as well as patching Bancho IPs on older clients. It can also automatically deobfuscate binaries using de4dot, if specified.
 
+> [!WARNING]
+> This repository has been deprecated and should no longer be used.
+> Please consider [Titanic! Hook](https://github.com/osuTitanic/hook/releases) as a replacement, as it's much easier to use and provides more features.
+
 ## Installation & Usage
 
 Download the latest release for your operating system [here](https://github.com/osuTitanic/titanic-patcher/releases/).  
